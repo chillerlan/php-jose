@@ -105,11 +105,11 @@ jobs:
       - name: "Run tests with phpunit"
         run: php vendor/bin/phpunit --colors=always --configuration=phpunit.xml.dist
 
-#      - name: "Send code coverage report to Codecov.io"
-#        uses: codecov/codecov-action@v4
-#        with:
-#          token: ${{ secrets.CODECOV_TOKEN }}
-#          files: .build/coverage/clover.xml
+      - name: "Send code coverage report to Codecov.io"
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: .build/coverage/clover.xml
 
 #      - name: "Send code coverage report to Codacy"
 #        uses: codacy/codacy-coverage-reporter-action@v1
