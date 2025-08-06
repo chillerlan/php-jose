@@ -55,6 +55,8 @@ jobs:
           ini-values: ${{ env.PHP_INI_VALUES }}
           coverage: none
 
+      - run: mkdir .build
+
       - name: "Install dependencies with composer"
         uses: ramsey/composer-install@v3
 
