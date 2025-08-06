@@ -83,7 +83,7 @@
 	<rule ref="SlevomatCodingStandard.TypeHints.LongTypeHints"/>
 	<rule ref="SlevomatCodingStandard.TypeHints.NullTypeHintOnLastPosition"/>
 	<rule ref="SlevomatCodingStandard.TypeHints.NullableTypeForNullDefaultValue"/>
-	<rule ref="SlevomatCodingStandard.TypeHints.ParameterTypeHint"/>
+	<!--<rule ref="SlevomatCodingStandard.TypeHints.ParameterTypeHint"/>-->
 	<rule ref="SlevomatCodingStandard.TypeHints.PropertyTypeHint"/>
 	<!--<rule ref="SlevomatCodingStandard.TypeHints.ReturnTypeHint"/>-->
 
