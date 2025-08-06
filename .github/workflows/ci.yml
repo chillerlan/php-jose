@@ -55,6 +55,9 @@ jobs:
           ini-values: ${{ env.PHP_INI_VALUES }}
           coverage: none
 
+      - name: "Install dependencies with composer"
+        uses: ramsey/composer-install@v3
+
       - name: "Run PHP_CodeSniffer"
         run: php vendor/bin/phpcs
 
