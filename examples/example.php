@@ -16,8 +16,6 @@ use chillerlan\JOSE\Util;
 
 require_once __DIR__.'/../vendor/autoload.php';
 
-$algo = 'ES256';
-
 // key examples from: https://datatracker.ietf.org/doc/html/rfc7515#appendix-A
 $privateJWK = '{
 	"kty":"EC",
@@ -46,7 +44,7 @@ $jwk = ECKey::parse(Util::jsonDecode($privateJWK));
 // ...or PEM
 $jwk = new ECKey(privateKey: $privatePEM, publicKey: $publicPEM);
 // invoke the signature algorithm
-$jwa = new ECDSA(jwk: $jwk, algo: $algo);
+$jwa = new ECDSA(jwk: $jwk, algo: ECDSA::ALGO_ES256);
 // invoke the signature
 $jws = new JWS($jwa);
 // encode and sign (requires private key
@@ -54,6 +52,3 @@ $jwt = $jws->encode(['foo' => 'bar']);
 var_dump($jwt);
 // decode and verify (requires public key)
 var_dump($jws->decode($jwt));
-
-#var_dump((new ECKey)->publicKeyToPEM(Util::jsonDecode($privateJWK)));
-#var_dump((new ECKey)->pemToPrivateJWK($privatePEM));

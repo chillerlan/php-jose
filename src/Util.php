@@ -22,6 +22,7 @@ use RuntimeException;
 use function array_map;
 use function chunk_split;
 use function is_array;
+use function is_string;
 use function json_decode;
 use function json_encode;
 use function openssl_pkey_get_private;
@@ -43,19 +44,22 @@ final class Util{
 	 * @return \chillerlan\JOSE\Key\JWK|\chillerlan\JOSE\Key\JWK[]
 	 * @throws \RuntimeException
 	 */
-	public static function parseJWK(string $jwk):array|JWK{
-		$data = self::jsonDecode($jwk);
+	public static function parseJWK(array|string $jwk):array|JWK{
 
-		if(isset($data['keys'])){
+		if(is_string($jwk)){
+			$jwk = self::jsonDecode($jwk);
+		}
 
-			if(!is_array($data['keys'])){
+		if(isset($jwk['keys'])){
+
+			if(!is_array($jwk['keys'])){
 				throw new RuntimeException('"keys" is not a valid JWK array');
 			}
 
-			return array_map(self::parseKey(...), $data['keys']);
+			return array_map(self::parseKey(...), $jwk['keys']);
 		}
 
-		return self::parseKey($data);
+		return self::parseKey($jwk);
 	}
 
 	/**
@@ -116,7 +120,7 @@ final class Util{
 		);
 	}
 
-	public static function parseKeyParams(array $keyData, array $keyParams, bool $base64decode = true):array{
+	public static function filterKeyParams(array $keyData, array $keyParams, bool $base64decode = true):array{
 		$key = [];
 
 		foreach($keyParams as $param){

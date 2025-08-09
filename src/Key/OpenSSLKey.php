@@ -13,12 +13,14 @@ namespace chillerlan\JOSE\Key;
 
 interface OpenSSLKey extends JWK{
 
-	public function privateKeyToPEM(array $key):string;
+	public function createPEM():string;
 
-	public function publicKeyToPEM(array $key):string;
+	public function privateKeyToPEM(array $jwk):string;
 
-	public function pemToPrivateJWK(string $pem, string|null $kid = null, string|null $use = null):string;
+	public function publicKeyToPEM(array $jwk):string;
 
-	public function pemToPublicJWK(string $pem, string|null $kid = null, string|null $use = null):string;
+	public function pemToPrivateJWK(string $pem, string|null $kid = null, string|null $use = null):array;
+
+	public function pemToPublicJWK(string $pem, string|null $kid = null, string|null $use = null):array;
 
 }

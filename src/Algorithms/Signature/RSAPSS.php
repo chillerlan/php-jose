@@ -48,11 +48,17 @@ use const STR_PAD_LEFT;
  */
 final class RSAPSS extends OpenSSLAbstract implements SignatureAlgorithm{
 
+	public const ALGO_PS256 = 'PS256';
+	public const ALGO_PS384 = 'PS384';
+	public const ALGO_PS512 = 'PS512';
+
 	public const SUPPORTED_ALGOS = [
-		'PS256' => 'SHA256',
-		'PS384' => 'SHA384',
-		'PS512' => 'SHA512',
+		self::ALGO_PS256 => 'SHA256',
+		self::ALGO_PS384 => 'SHA384',
+		self::ALGO_PS512 => 'SHA512',
 	];
+
+	protected const KEYTYPE = OPENSSL_KEYTYPE_RSA;
 
 	private const HASH_LENGTH = [
 		'SHA256' => 32,
@@ -60,27 +66,25 @@ final class RSAPSS extends OpenSSLAbstract implements SignatureAlgorithm{
 		'SHA512' => 64,
 	];
 
-	protected const KEYTYPE = OPENSSL_KEYTYPE_RSA;
-
 	public function sign(string $message):string{
-		$key       = Util::parseKeyParams($this->getPrivateKeyDetails()['rsa'], RSAKey::PARAMS_OPENSSL, false);
+		$key       = Util::filterKeyParams($this->getPrivateKeyDetails()['rsa'], RSAKey::PARAMS_OPENSSL, false);
 		$modlen    = strlen($key['n']);
 		$em        = $this->encodeEMSAPSS($message, (8 * $modlen - 1), $this::SUPPORTED_ALGOS[$this->algo]);
 		$signature = $this->exponentiate($key, $em, $modlen);
 
 		if($signature === ''){
-			throw new RuntimeException('Invalid signature.');
+			throw new RuntimeException('Invalid signature.'); // @codeCoverageIgnore
 		}
 
 		return $signature;
 	}
 
 	public function verify(string $message, string $signature):bool{
-		$key    = Util::parseKeyParams($this->getPublicKeyDetails()['rsa'], ['n', 'e'], false);
+		$key    = Util::filterKeyParams($this->getPublicKeyDetails()['rsa'], ['n', 'e'], false);
 		$modlen = strlen($key['n']);
 
 		if(strlen($signature) !== $modlen){
-			throw new InvalidArgumentException('invalid signature or key');
+			throw new InvalidArgumentException('invalid signature or key'); // @codeCoverageIgnore
 		}
 
 		$em = $this->exponentiate($key, $signature, $modlen);
@@ -92,11 +96,75 @@ final class RSAPSS extends OpenSSLAbstract implements SignatureAlgorithm{
 		return $bits >= 2048;
 	}
 
+	private function encodeEMSAPSS(string $message, int $modulusLength, string $hashName):string{
+		$emLen = (($modulusLength + 1) >> 3);
+		$sLen  = $this::HASH_LENGTH[$hashName];
+
+		if($emLen <= (2 * $sLen + 2)){
+			throw new RuntimeException;  // @codeCoverageIgnore
+		}
+
+		$mHash    = hash($hashName, $message, true);
+		$salt     = random_bytes($sLen);
+		$m2       = str_repeat("\x00", 8).$mHash.$salt;
+		$h        = hash($hashName, $m2, true);
+		$ps       = str_repeat("\x00", ($emLen - 2 * $sLen - 2));
+		$db       = $ps."\x01".$salt;
+		$dbMask   = $this->getMGF1($h, ($emLen - $sLen - 1), $hashName);
+		$maskedDB = ($db ^ $dbMask);
+
+		$maskedDB[0] = ($maskedDB[0] & ~chr(0xFF << ($modulusLength & 7)));
+
+		return $maskedDB.$h."\xBC";
+	}
+
+	private function verifyEMSAPSS(string $m, string $em, int $emBits, string $hashName):bool{
+		$hl    = $this::HASH_LENGTH[$hashName];
+		$emLen = (($emBits + 1) >> 3);
+		$sLen  = $hl;
+
+		if($emLen < ($hl + $sLen + 2)){
+			throw new InvalidArgumentException; // @codeCoverageIgnore
+		}
+
+		if($em[(strlen($em) - 1)] !== "\xBC"){
+			throw new InvalidArgumentException; // @codeCoverageIgnore
+		}
+
+		$maskedDB = substr($em, 0, (-$hl - 1));
+		$h        = substr($em, (-$hl - 1), $hl);
+		$temp     = chr(0xFF << ($emBits & 7));
+
+		if((~$maskedDB[0] & $temp) !== $temp){
+			throw new InvalidArgumentException; // @codeCoverageIgnore
+		}
+
+		$dbMask = $this->getMGF1($h, ($emLen - $hl - 1), $hashName);
+		$db     = ($maskedDB ^ $dbMask);
+		$db[0]  = ($db[0] & ~chr(0xFF << ($emBits & 7)));
+		$temp   = ($emLen - $hl - $sLen - 2);
+
+		if(substr($db, 0, $temp) !== str_repeat("\x00", $temp)){
+			throw new InvalidArgumentException; // @codeCoverageIgnore
+		}
+
+		if(ord($db[$temp]) !== 1){
+			throw new InvalidArgumentException; // @codeCoverageIgnore
+		}
+
+		$mHash = hash($hashName, $m, true);
+		$salt  = substr($db, ($temp + 1)); // should be $sLen long
+		$m2    = str_repeat("\x00", 8).$mHash.$salt;
+		$h2    = hash($hashName, $m2, true);
+
+		return hash_equals($h, $h2);
+	}
+
 	private function toOctetString(GMP $x, int $xLen):string{
 		$x = gmp_export($x);
 
 		if(strlen($x) > $xLen){
-			throw new RuntimeException;
+			throw new RuntimeException; // @codeCoverageIgnore
 		}
 
 		return str_pad($x, $xLen, "\x00", STR_PAD_LEFT);
@@ -132,70 +200,6 @@ final class RSAPSS extends OpenSSLAbstract implements SignatureAlgorithm{
 		}
 
 		return substr($t, 0, $maskLen);
-	}
-
-	private function encodeEMSAPSS(string $message, int $modulusLength, string $hashName):string{
-		$emLen = (($modulusLength + 1) >> 3);
-		$sLen  = $this::HASH_LENGTH[$hashName];
-
-		if($emLen <= (2 * $sLen + 2)){
-			throw new RuntimeException;
-		}
-
-		$mHash    = hash($hashName, $message, true);
-		$salt     = random_bytes($sLen);
-		$m2       = str_repeat("\x00", 8).$mHash.$salt;
-		$h        = hash($hashName, $m2, true);
-		$ps       = str_repeat("\x00", ($emLen - 2 * $sLen - 2));
-		$db       = $ps."\x01".$salt;
-		$dbMask   = $this->getMGF1($h, ($emLen - $sLen - 1), $hashName);
-		$maskedDB = ($db ^ $dbMask);
-
-		$maskedDB[0] = ($maskedDB[0] & ~chr(0xFF << ($modulusLength & 7)));
-
-		return $maskedDB.$h."\xBC";
-	}
-
-	private function verifyEMSAPSS(string $m, string $em, int $emBits, string $hashName):bool{
-		$hl    = $this::HASH_LENGTH[$hashName];
-		$emLen = (($emBits + 1) >> 3);
-		$sLen  = $hl;
-
-		if($emLen < ($hl + $sLen + 2)){
-			throw new InvalidArgumentException;
-		}
-
-		if($em[(strlen($em) - 1)] !== "\xBC"){
-			throw new InvalidArgumentException;
-		}
-
-		$maskedDB = substr($em, 0, (-$hl - 1));
-		$h        = substr($em, (-$hl - 1), $hl);
-		$temp     = chr(0xFF << ($emBits & 7));
-
-		if((~$maskedDB[0] & $temp) !== $temp){
-			throw new InvalidArgumentException;
-		}
-
-		$dbMask = $this->getMGF1($h, ($emLen - $hl - 1), $hashName);
-		$db     = ($maskedDB ^ $dbMask);
-		$db[0]  = ($db[0] & ~chr(0xFF << ($emBits & 7)));
-		$temp   = ($emLen - $hl - $sLen - 2);
-
-		if(substr($db, 0, $temp) !== str_repeat("\x00", $temp)){
-			throw new InvalidArgumentException;
-		}
-
-		if(ord($db[$temp]) !== 1){
-			throw new InvalidArgumentException;
-		}
-
-		$mHash = hash($hashName, $m, true);
-		$salt  = substr($db, ($temp + 1)); // should be $sLen long
-		$m2    = str_repeat("\x00", 8).$mHash.$salt;
-		$h2    = hash($hashName, $m2, true);
-
-		return hash_equals($h, $h2);
 	}
 
 }

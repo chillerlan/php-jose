@@ -12,32 +12,57 @@ declare(strict_types=1);
 namespace chillerlan\JOSE\Key;
 
 use RuntimeException;
+use function trim;
 
 abstract class JWKAbstract implements JWK{
 
 	public function __construct(
 		protected string|null $privateKey = null,
 		protected string|null $publicKey = null,
-		protected string|null $algo = null,
-		protected string|null $id = null,
+		protected string|null $alg = null,
+		protected string|null $kid = null,
+		protected string|null $use = null,
 	){
 		// noop
 	}
 
-	public function getPrivateKey():string|null{
+	public function getPrivateKey():string{
+
+		if($this->privateKey === null){
+			throw new RuntimeException('no private key set'); // @codeCoverageIgnore
+		}
+
 		return $this->privateKey;
 	}
 
-	public function getPublicKey():string|null{
+	public function getPublicKey():string{
+
+		if($this->publicKey === null){
+			throw new RuntimeException('no public key set'); // @codeCoverageIgnore
+		}
+
 		return $this->publicKey;
 	}
 
+	/**
+	 * @codeCoverageIgnore
+	 */
 	public function getAlgo():string|null{
-		return $this->algo;
+		return $this->alg;
 	}
 
+	/**
+	 * @codeCoverageIgnore
+	 */
 	public function getID():string|null{
-		return $this->id;
+		return $this->kid;
+	}
+
+	/**
+	 * @codeCoverageIgnore
+	 */
+	public function getUse():string|null{
+		return $this->use;
 	}
 
 	/**
@@ -64,7 +89,20 @@ abstract class JWKAbstract implements JWK{
 			$kid = (string)$jsonKeyData['kid'];
 		}
 		/** @phan-suppress-next-line PhanTypeInstantiateAbstractStatic */
-		return new static($private, $public, ($jsonKeyData['alg'] ?? null), $kid);
+		return new static($private, $public, ($jsonKeyData['alg'] ?? null), $kid, ($jsonKeyData['use'] ?? null));
+	}
+
+	protected function addInformationalValues(array $jwk, string|null $kid = null, string|null $use = null):array{
+
+		foreach(['kid' => $kid, 'use' => $use] as $var => $val){
+			$val ??= $this->{$var};
+
+			if($val !== null){
+				$jwk[$var] = trim($val);
+			}
+		}
+
+		return $jwk;
 	}
 
 }

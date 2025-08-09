@@ -25,10 +25,14 @@ use const OPENSSL_KEYTYPE_RSA;
  */
 final class RSA extends OpenSSLAbstract implements SignatureAlgorithm{
 
+	public const ALGO_RS256 = 'RS256';
+	public const ALGO_RS384 = 'RS384';
+	public const ALGO_RS512 = 'RS512';
+
 	public const SUPPORTED_ALGOS = [
-		'RS256' => OPENSSL_ALGO_SHA256,
-		'RS384' => OPENSSL_ALGO_SHA384,
-		'RS512' => OPENSSL_ALGO_SHA512,
+		self::ALGO_RS256 => OPENSSL_ALGO_SHA256,
+		self::ALGO_RS384 => OPENSSL_ALGO_SHA384,
+		self::ALGO_RS512 => OPENSSL_ALGO_SHA512,
 	];
 
 	protected const KEYTYPE = OPENSSL_KEYTYPE_RSA;

@@ -14,7 +14,6 @@ namespace chillerlan\JOSE\Key;
 use chillerlan\JOSE\Util;
 use RuntimeException;
 use function random_bytes;
-use function trim;
 
 /**
  * Symmetric Key
@@ -26,6 +25,9 @@ use function trim;
 final class OCTKey extends JWKAbstract{
 
 	public const KTY = 'oct';
+
+	public const PARAMS_PRIVATE = ['k'];
+	public const PARAMS_PUBLIC  = ['k'];
 
 	/**
 	 * @see \hash_hmac()
@@ -42,7 +44,7 @@ final class OCTKey extends JWKAbstract{
 		return [$key, $key];
 	}
 
-	public function create(string|null $kid = null, string|null $use = null, bool $asPEM = false):string{
+	public function create(string|null $kid = null, string|null $use = null, bool $asPEM = false):array{
 
 		if($asPEM === true){
 			throw new RuntimeException('PEM export is not supported');
@@ -50,16 +52,30 @@ final class OCTKey extends JWKAbstract{
 
 		$jwk = [
 			'kty' => 'oct',
-			'k'   => random_bytes(64),
+			'k'   => Util::base64encode(random_bytes(64)),
 		];
 
-		foreach(['kid' => $kid, 'use' => $use] as $var => $val){
-			if($val !== null){
-				$jwk[$var] = trim($val);
-			}
-		}
+		return $this->addInformationalValues($jwk, $kid, $use);
+	}
 
-		return Util::jsonEncode($jwk);
+	public function toPrivateJWK(string|null $kid = null, string|null $use = null):array{
+
+		$jwk = [
+			'kty' => 'oct',
+			'k'   => Util::base64encode($this->getPrivateKey()),
+		];
+
+		return $this->addInformationalValues($jwk, $kid, $use);
+	}
+
+	public function toPublicJWK(string|null $kid = null, string|null $use = null):array{
+
+		$jwk = [
+			'kty' => 'oct',
+			'k'   => Util::base64encode($this->getPublicKey()),
+		];
+
+		return $this->addInformationalValues($jwk, $kid, $use);
 	}
 
 }

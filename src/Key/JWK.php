@@ -21,12 +21,25 @@ interface JWK{
 
 	public const KTY = '';
 
-	public static function parse(array $jsonKeyData):static;
-	public function getPrivateKey():string|null;
-	public function getPublicKey():string|null;
-	public function getAlgo():string|null;
-	public function getID():string|null;
-	public function create(string|null $kid = null, string|null $use = null, bool $asPEM = false):string;
+	public const PARAMS_PRIVATE = [];
+	public const PARAMS_PUBLIC  = [];
 
+	public static function parse(array $jsonKeyData):static;
+
+	public function getPrivateKey():string;
+
+	public function getPublicKey():string;
+
+	public function getAlgo():string|null;
+
+	public function getID():string|null;
+
+	public function getUse():string|null;
+
+	public function create(string|null $kid = null, string|null $use = null):array;
+
+	public function toPrivateJWK(string|null $kid = null, string|null $use = null):array;
+
+	public function toPublicJWK(string|null $kid = null, string|null $use = null):array;
 
 }

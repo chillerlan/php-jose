@@ -23,7 +23,6 @@ use function gmp_export;
 use function gmp_init;
 use function gmp_invert;
 use function gmp_sub;
-use function json_encode;
 use function ltrim;
 use function openssl_pkey_export;
 use function openssl_pkey_get_details;
@@ -31,11 +30,6 @@ use function openssl_pkey_new;
 use function ord;
 use function pack;
 use function strlen;
-use function trim;
-use const JSON_PRETTY_PRINT;
-use const JSON_THROW_ON_ERROR;
-use const JSON_UNESCAPED_SLASHES;
-use const JSON_UNESCAPED_UNICODE;
 use const OPENSSL_KEYTYPE_RSA;
 
 /**
@@ -53,7 +47,7 @@ use const OPENSSL_KEYTYPE_RSA;
  * @link https://github.com/phpseclib/phpseclib/blob/4da3ee3867a4d7b06f60be0eb93efec9973adcfb/phpseclib/Math/BigInteger/Engines/GMP.php
  * @link https://github.com/phpseclib/phpseclib/blob/4da3ee3867a4d7b06f60be0eb93efec9973adcfb/phpseclib/File/ASN1.php
  */
-final class RSAKey extends JWKAbstract implements OpenSSLKey{
+final class RSAKey extends OpenSSLKeyAbstract{
 
 	public const KTY = 'RSA';
 
@@ -102,6 +96,38 @@ final class RSAKey extends JWKAbstract implements OpenSSLKey{
 		],
 	];
 
+	public function create(string|null $kid = null, string|null $use = null, int $size = 4096):array{
+		return $this->toArray($this->createKey($size), true, $kid, $use);
+	}
+
+	public function createPEM(int $size = 4096):string{
+
+		if(openssl_pkey_export($this->createKey($size), $pem) === false){
+			throw new RuntimeException('unable to export the key');
+		}
+
+		return $pem;
+	}
+
+	public function privateKeyToPEM(array $jwk):string{
+		$jwk = $this->parseKey($jwk, self::PARAMS_PRIVATE);
+
+		if(!$jwk['p'] instanceof GMP){
+			throw new RuntimeException('no primes given');
+		}
+
+		$der = $this->encodeDER($jwk, self::RSAPrivateKey);
+
+		return Util::formatPEM($der, 'RSA PRIVATE');
+	}
+
+	public function publicKeyToPEM(array $jwk):string{
+		$jwk = $this->parseKey($jwk, self::PARAMS_PUBLIC);
+		$der = $this->encodeDER($jwk, self::RSAPublicKey);
+
+		return Util::formatPEM($der, 'RSA PUBLIC');
+	}
+
 	/**
 	 * @see \openssl_pkey_get_private()
 	 * @see \openssl_pkey_get_public()
@@ -118,7 +144,35 @@ final class RSAKey extends JWKAbstract implements OpenSSLKey{
 		return [$private, $public];
 	}
 
-	public function create(string|null $kid = null, string|null $use = null, bool $asPEM = false, int $size = 4096):string{
+	protected function toArray(OpenSSLAsymmetricKey $key, bool $private, string|null $kid = null, string|null $use = null):array{
+		$details = openssl_pkey_get_details($key);
+
+		if($details === false){
+			throw new RuntimeException('could not get key details');
+		}
+
+		if($details['type'] !== OPENSSL_KEYTYPE_RSA  || !isset($details['rsa'])){
+			throw new InvalidArgumentException('the given key is not a valid RSA key');
+		}
+
+		$jwk = $this->addInformationalValues(['kty' => 'RSA'], $kid, $use);
+
+		$params = self::PARAMS_PUBLIC;
+
+		if($private === true){
+			$params = self::PARAMS_OPENSSL;
+		}
+
+		foreach($params as $i => $param){
+			if(isset($details['rsa'][$param])){
+				$jwk[self::PARAMS_PRIVATE[$i]] = Util::base64encode($details['rsa'][$param]);
+			}
+		}
+
+		return $jwk;
+	}
+
+	private function createKey(int $size):OpenSSLAsymmetricKey{
 
 		if($size < 2048){
 			throw new InvalidArgumentException('key size too small (min 2048)');
@@ -137,81 +191,11 @@ final class RSAKey extends JWKAbstract implements OpenSSLKey{
 			throw new RuntimeException('unable to create the key');
 		}
 
-		if($asPEM === true){
-
-			if(openssl_pkey_export($key, $pem) === false){
-				throw new RuntimeException('unable to export the key');
-			}
-
-			return $pem;
-		}
-
-		return $this->toJSON($key, true, $kid, $use);
-	}
-
-	private function toJSON(OpenSSLAsymmetricKey $key, bool $private, string|null $kid = null, string|null $use = null):string{
-		$details = openssl_pkey_get_details($key);
-
-		if($details === false){
-			throw new RuntimeException('could not get key details');
-		}
-
-		if($details['type'] !== OPENSSL_KEYTYPE_RSA  || !isset($details['rsa'])){
-			throw new InvalidArgumentException('the given key is not a valid RSA key');
-		}
-
-		$jwk = ['kty' => 'RSA'];
-
-		foreach(['kid' => $kid, 'use' => $use] as $var => $val){
-			if($val !== null){
-				$jwk[$var] = trim($val);
-			}
-		}
-
-		$params = self::PARAMS_PUBLIC;
-
-		if($private === true){
-			$params = self::PARAMS_OPENSSL;
-		}
-
-		foreach($params as $i => $param){
-			if(isset($details['rsa'][$param])){
-				$jwk[self::PARAMS_PRIVATE[$i]] = Util::base64encode($details['rsa'][$param]);
-			}
-		}
-
-		return json_encode($jwk, (JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
-	}
-
-	public function privateKeyToPEM(array $key):string{
-		$key = $this->parseKey($key, self::PARAMS_PRIVATE);
-
-		if(!$key['p'] instanceof GMP){
-			throw new RuntimeException('no primes given');
-		}
-
-		$der = $this->encodeDER($key, self::RSAPrivateKey);
-
-		return Util::formatPEM($der, 'RSA PRIVATE');
-	}
-
-	public function publicKeyToPEM(array $key):string{
-		$key = $this->parseKey($key, self::PARAMS_PUBLIC);
-		$der = $this->encodeDER($key, self::RSAPublicKey);
-
-		return Util::formatPEM($der, 'RSA PUBLIC');
-	}
-
-	public function pemToPrivateJWK(string $pem, string|null $kid = null, string|null $use = null):string{
-		return $this->toJSON(Util::loadPEM($pem), true, $kid, $use);
-	}
-
-	public function pemToPublicJWK(string $pem, string|null $kid = null, string|null $use = null):string{
-		return $this->toJSON(Util::loadPEM($pem), false, $kid, $use);
+		return $key;
 	}
 
 	private function parseKey(array $keyData, array $keyParams):array{
-		$key = Util::parseKeyParams($keyData, $keyParams);
+		$key = Util::filterKeyParams($keyData, $keyParams);
 
 		if(!isset($key['n'], $key['e'])){
 			throw new InvalidArgumentException('RSA keys must contain values for both "n" and "e"');

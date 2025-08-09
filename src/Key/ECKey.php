@@ -16,7 +16,6 @@ use InvalidArgumentException;
 use OpenSSLAsymmetricKey;
 use RuntimeException;
 use function ceil;
-use function json_encode;
 use function ltrim;
 use function openssl_pkey_export;
 use function openssl_pkey_get_details;
@@ -25,11 +24,6 @@ use function sodium_bin2hex;
 use function sodium_hex2bin;
 use function sprintf;
 use function str_pad;
-use function trim;
-use const JSON_PRETTY_PRINT;
-use const JSON_THROW_ON_ERROR;
-use const JSON_UNESCAPED_SLASHES;
-use const JSON_UNESCAPED_UNICODE;
 use const OPENSSL_KEYTYPE_EC;
 use const STR_PAD_LEFT;
 
@@ -45,23 +39,29 @@ use const STR_PAD_LEFT;
  *
  * @link https://github.com/web-token/jwt-framework/blob/4af252f28996bfb8ce5eac78037a555dce222829/src/Library/Core/Util/ECKey.php
  */
-final class ECKey extends JWKAbstract implements OpenSSLKey{
+final class ECKey extends OpenSSLKeyAbstract{
 
 	public const KTY = 'EC';
+
+	public const CRV_P256  = 'P-256';
+	public const CRV_P256K = 'P-256K';
+	public const CRV_P384  = 'P-384';
+	public const CRV_P521  = 'P-521';
 
 	public const PARAMS_PRIVATE = ['x', 'y', 'd'];
 	public const PARAMS_PUBLIC  = ['x', 'y'];
 
+	// map of valid crv values (resolver)
 	// https://datatracker.ietf.org/doc/html/rfc7518#section-6.2.1.1
 	private const EC_CURVES = [
-		'P-256'      => 'P-256',
-		'prime256v1' => 'P-256',
-		'P-256K'     => 'P-256K',
-		'secp256k1'  => 'P-256K',
-		'P-384'      => 'P-384',
-		'secp384r1'  => 'P-384',
-		'P-521'      => 'P-521',
-		'secp521r1'  => 'P-521',
+		'P-256'      => self::CRV_P256,
+		'prime256v1' => self::CRV_P256,
+		'P-256K'     => self::CRV_P256K,
+		'secp256k1'  => self::CRV_P256K,
+		'P-384'      => self::CRV_P384,
+		'secp384r1'  => self::CRV_P384,
+		'P-521'      => self::CRV_P521,
+		'secp521r1'  => self::CRV_P521,
 	];
 
 	// map of crv value -> openssl name
@@ -164,6 +164,71 @@ final class ECKey extends JWKAbstract implements OpenSSLKey{
 		'038186'. // BIT STRING, length 134
 		'00'; // prepend with NUL - pubkey will follow
 
+	public function create(string|null $kid = null, string|null $use = null, string $crv = self::CRV_P521):array{
+		return $this->toArray($this->createKey($crv), true, $kid, $use);
+	}
+
+	public function createPEM(string $crv = self::CRV_P521):string{
+
+		if(openssl_pkey_export($this->createKey($crv), $pem) === false){
+			throw new RuntimeException('unable to export the key');
+		}
+
+		return $pem;
+	}
+
+	public function privateKeyToPEM(array $jwk):string{
+
+		if(!isset($jwk['crv'])){
+			throw new InvalidArgumentException('"crv" not set');
+		}
+
+		$key = Util::filterKeyParams($jwk, self::PARAMS_PRIVATE);
+
+		if(!isset($key['x'], $key['y'], $key['d'])){
+			throw new RuntimeException('"x", "y" and/or "d" not set');
+		}
+
+		[$der, $padSize] = match($jwk['crv']){
+			self::CRV_P256  => [self::p256PrivateKey, 32],
+			self::CRV_P256K => [self::p256KPrivateKey, 32],
+			self::CRV_P384  => [self::p384PrivateKey, 48],
+			self::CRV_P521  => [self::p521PrivateKey, 66],
+			default => throw new RuntimeException(sprintf('unsupported curve: "%s"', $jwk['crv'])),
+		};
+
+		$der  = sodium_hex2bin(sprintf($der, sodium_bin2hex($this->zeropad($key['d'], $padSize))));
+		$der .= $this->getKey($jwk['crv'], $key['x'], $key['y']);
+
+		return Util::formatPEM($der, 'EC PRIVATE');
+	}
+
+	public function publicKeyToPEM(array $jwk):string{
+
+		if(!isset($jwk['crv'])){
+			throw new InvalidArgumentException('"crv" not set');
+		}
+
+		$key = Util::filterKeyParams($jwk, self::PARAMS_PUBLIC);
+
+		if(!isset($key['x'], $key['y'])){
+			throw new InvalidArgumentException('"x" and/or "y" not set');
+		}
+
+		$der = match($jwk['crv']){
+			self::CRV_P256  => self::p256PublicKey,
+			self::CRV_P256K => self::p256KPublicKey,
+			self::CRV_P384  => self::p384PublicKey,
+			self::CRV_P521  => self::p521PublicKey,
+			default => throw new RuntimeException(sprintf('unsupported curve: "%s"', $key['crv'])),
+		};
+
+		$der  = sodium_hex2bin($der);
+		$der .= $this->getKey($jwk['crv'], $key['x'], $key['y']);
+
+		return Util::formatPEM($der);
+	}
+
 	/**
 	 * @see \openssl_pkey_get_private()
 	 * @see \openssl_pkey_get_public()
@@ -171,7 +236,7 @@ final class ECKey extends JWKAbstract implements OpenSSLKey{
 	protected static function parseJWK(array $jsonKeyData):array{
 
 		if(!isset($jsonKeyData['crv'])){
-			throw new RuntimeException('"crv" not set');
+			throw new InvalidArgumentException('"crv" not set');
 		}
 
 		$ecKey   = new self;
@@ -185,60 +250,23 @@ final class ECKey extends JWKAbstract implements OpenSSLKey{
 		return [$private, $public];
 	}
 
-	public function create(string|null $kid = null, string|null $use = null, bool $asPEM = false, string $crv = 'P-521'):string{
-
-		if(!isset(self::CRV_OPENSSL[$crv])){
-			throw new RuntimeException(sprintf('the curve "%s" is not supported', $crv));
-		}
-
-		$key = openssl_pkey_new([
-			'curve_name'       => self::CRV_OPENSSL[$crv],
-			'private_key_type' => OPENSSL_KEYTYPE_EC,
-		]);
-
-		if($key === false){
-			throw new RuntimeException('unable to create the key');
-		}
-
-		if($asPEM === true){
-
-			if(openssl_pkey_export($key, $pem) === false){
-				throw new RuntimeException('unable to export the key');
-			}
-
-			return $pem;
-		}
-
-		return $this->toJSON($key, true, $kid, $use);
-	}
-
-	private function toJSON(OpenSSLAsymmetricKey $key, bool $private, string|null $kid = null, string|null $use = null):string{
+	protected function toArray(OpenSSLAsymmetricKey $key, bool $private, string|null $kid = null, string|null $use = null):array{
 		$details = openssl_pkey_get_details($key);
 
 		if($details === false){
-			throw new RuntimeException('could not get key details');
+			throw new RuntimeException('could not get key details'); // @codeCoverageIgnore
 		}
 
 		if($details['type'] !== OPENSSL_KEYTYPE_EC || !isset($details['ec']['curve_name'])){
-			throw new InvalidArgumentException('the given key is not a valid EC key');
+			throw new InvalidArgumentException('the given key is not a valid EC key'); // @codeCoverageIgnore
 		}
 
 		if(!isset(self::EC_CURVES[$details['ec']['curve_name']])){
-			throw new RuntimeException(sprintf('the curve "%s" is not supported', $details['ec']['curve_name']));
+			throw new InvalidArgumentException('the given curve is not supported'); // @codeCoverageIgnore
 		}
 
 		$crv = self::EC_CURVES[$details['ec']['curve_name']];
-
-		$jwk = [
-			'kty' => 'EC',
-			'crv' => $crv,
-		];
-
-		foreach(['kid' => $kid, 'use' => $use] as $var => $val){
-			if($val !== null){
-				$jwk[$var] = trim($val);
-			}
-		}
+		$jwk = $this->addInformationalValues(['kty' => 'EC', 'crv' => $crv], $kid, $use);
 
 		$curveSize = $this->getNistCurveSize($crv);
 		$params    = self::PARAMS_PUBLIC;
@@ -253,86 +281,42 @@ final class ECKey extends JWKAbstract implements OpenSSLKey{
 			}
 		}
 
-		return json_encode($jwk, (JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
+		return $jwk;
 	}
 
-	public function privateKeyToPEM(array $key, string|null $crv = null):string{
-		$crv ??= ($key['crv'] ?? null);
+	private function createKey(string $crv):OpenSSLAsymmetricKey{
 
-		if($crv === null){
-			throw new InvalidArgumentException;
+		if(!isset(self::CRV_OPENSSL[$crv])){
+			throw new InvalidArgumentException('the given curve is not supported'); // @codeCoverageIgnore
 		}
 
-		$key = Util::parseKeyParams($key, self::PARAMS_PRIVATE);
+		$key = openssl_pkey_new([
+			'curve_name'       => self::CRV_OPENSSL[$crv],
+			'private_key_type' => OPENSSL_KEYTYPE_EC,
+		]);
 
-		if(!isset($key['x'], $key['y'], $key['d'])){
-			throw new RuntimeException('"x", "y" and/or "d" not set');
+		if($key === false){
+			throw new RuntimeException('unable to create the key');
 		}
 
-		[$der, $padSize] = match($crv){
-			'P-256'  => [self::p256PrivateKey, 32],
-			'P-256K' => [self::p256KPrivateKey, 32],
-			'P-384'  => [self::p384PrivateKey, 48],
-			'P-521'  => [self::p521PrivateKey, 66],
-			default => throw new RuntimeException('unsupported curve'),
-		};
-
-		$der  = sodium_hex2bin(sprintf($der, sodium_bin2hex($this->zeropad($key['d'], $padSize))));
-		$der .= $this->getKey($crv, $key['x'], $key['y']);
-
-		return Util::formatPEM($der, 'EC PRIVATE');
-	}
-
-	public function publicKeyToPEM(array $key, string|null $crv = null):string{
-		$crv ??= ($key['crv'] ?? null);
-
-		if($crv === null){
-			throw new InvalidArgumentException;
-		}
-
-		$key = Util::parseKeyParams($key, self::PARAMS_PUBLIC);
-
-		if(!isset($key['x'], $key['y'])){
-			throw new RuntimeException('"x" and/or "y" not set');
-		}
-
-		$der = match($crv){
-			'P-256'  => self::p256PublicKey,
-			'P-256K' => self::p256KPublicKey,
-			'P-384'  => self::p384PublicKey,
-			'P-521'  => self::p521PublicKey,
-			default => throw new RuntimeException('unsupported curve'),
-		};
-
-		$der  = sodium_hex2bin($der);
-		$der .= $this->getKey($crv, $key['x'], $key['y']);
-
-		return Util::formatPEM($der);
-	}
-
-	public function pemToPrivateJWK(string $pem, string|null $kid = null, string|null $use = null):string{
-		return $this->toJSON(Util::loadPEM($pem), true, $kid, $use);
-	}
-
-	public function pemToPublicJWK(string $pem, string|null $kid = null, string|null $use = null):string{
-		return $this->toJSON(Util::loadPEM($pem), false, $kid, $use);
+		return $key;
 	}
 
 	private function getKey(string $crv, string $x, string $y):string{
 		$curveSize = $this->getNistCurveSize($crv);
 
 		return "\04".
-		       $this->zeropad(ltrim($x, "\x00"), $curveSize).
-		       $this->zeropad(ltrim($y, "\x00"), $curveSize);
+			$this->zeropad(ltrim($x, "\x00"), $curveSize).
+			$this->zeropad(ltrim($y, "\x00"), $curveSize);
 	}
 
 	private function getNistCurveSize(string $curve):int{
 
 		$size = match($curve){
-			'P-256', 'P-256K' => 256,
-			'P-384'           => 384,
-			'P-521'           => 521,
-			default => throw new RuntimeException(sprintf('the curve "%s" is not supported', $curve)),
+			self::CRV_P256, self::CRV_P256K => 256,
+			self::CRV_P384                  => 384,
+			self::CRV_P521                  => 521,
+			default => throw new InvalidArgumentException('the given curve is not supported'), // @codeCoverageIgnore
 		};
 
 		return (int)ceil($size / 8);

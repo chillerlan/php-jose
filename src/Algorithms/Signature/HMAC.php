@@ -26,16 +26,20 @@ use function strlen;
  */
 final class HMAC extends JWAAbstract implements SignatureAlgorithm{
 
+	public const ALGO_HS256 = 'HS256';
+	public const ALGO_HS384 = 'HS384';
+	public const ALGO_HS512 = 'HS512';
+
 	public const SUPPORTED_ALGOS = [
-		'HS256' => 'SHA256', // required
-		'HS384' => 'SHA384',
-		'HS512' => 'SHA512',
+		self::ALGO_HS256 => 'SHA256', // required
+		self::ALGO_HS384 => 'SHA384',
+		self::ALGO_HS512 => 'SHA512',
 	];
 
 	private const MIN_KEYLENGTH = [
-		'HS256' => 256,
-		'HS384' => 384,
-		'HS512' => 512,
+		self::ALGO_HS256 => 256,
+		self::ALGO_HS384 => 384,
+		self::ALGO_HS512 => 512,
 	];
 
 	public function sign(string $message):string{
@@ -57,11 +61,11 @@ final class HMAC extends JWAAbstract implements SignatureAlgorithm{
 			$key = $this->jwk->getPrivateKey();
 		}
 		catch(Throwable){
-			$key = $this->jwk->getPublicKey();
+			$key = $this->jwk->getPublicKey(); // @codeCoverageIgnore
 		}
 
 		if((strlen($key) * 8) < $this::MIN_KEYLENGTH[$this->algo]){
-			throw new RuntimeException('the given key is too short');
+			throw new RuntimeException('the given key is too short'); // @codeCoverageIgnore
 		}
 
 		return $key;

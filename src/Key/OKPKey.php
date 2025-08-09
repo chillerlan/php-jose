@@ -18,7 +18,6 @@ use function sodium_crypto_sign_keypair;
 use function sodium_crypto_sign_publickey;
 use function sodium_crypto_sign_secretkey;
 use function substr;
-use function trim;
 
 /**
  * ECDH-ES Key
@@ -31,7 +30,8 @@ final class OKPKey extends JWKAbstract{
 
 	public const KTY = 'OKP';
 
-	private const KEY_PARAMS = ['x', 'd'];
+	public const PARAMS_PRIVATE = ['x', 'd'];
+	public const PARAMS_PUBLIC  = ['d'];
 
 	// supported "crv" values for "OKP" type, see https://datatracker.ietf.org/doc/html/rfc8037#section-3.1
 	private const SUBTYPES = ['Ed25519'];
@@ -53,7 +53,7 @@ final class OKPKey extends JWKAbstract{
 			throw new RuntimeException('public key "x" not set');
 		}
 
-		$key     = Util::parseKeyParams($jsonKeyData, self::KEY_PARAMS);
+		$key     = Util::filterKeyParams($jsonKeyData, self::PARAMS_PRIVATE);
 		$private = null;
 
 		if(isset($key['d'])){
@@ -66,7 +66,7 @@ final class OKPKey extends JWKAbstract{
 		return [$private, $key['x']];
 	}
 
-	public function create(string|null $kid = null, string|null $use = null, bool $asPEM = false):string{
+	public function create(string|null $kid = null, string|null $use = null, bool $asPEM = false):array{
 
 		if($asPEM === true){
 			throw new RuntimeException('PEM export is not supported');
@@ -76,19 +76,35 @@ final class OKPKey extends JWKAbstract{
 
 		$jwk = [
 			'kty' => 'OKP',
-			'alg' => 'EdDSA',
 			'crv' => 'Ed25519',
 			'd'   => Util::base64encode(substr(sodium_crypto_sign_secretkey($sign_pair), 0, 32)),
 			'x'   => Util::base64encode(sodium_crypto_sign_publickey($sign_pair)),
 		];
 
-		foreach(['kid' => $kid, 'use' => $use] as $var => $val){
-			if($val !== null){
-				$jwk[$var] = trim($val);
-			}
-		}
+		return $this->addInformationalValues($jwk, $kid, $use);
+	}
 
-		return Util::jsonEncode($jwk);
+	public function toPrivateJWK(string|null $kid = null, string|null $use = null):array{
+
+		$jwk = [
+			'kty' => 'OKP',
+			'crv' => 'Ed25519',
+			'd'   => Util::base64encode(substr($this->getPrivateKey(), 0, 32)),
+			'x'   => Util::base64encode($this->getPublicKey()),
+		];
+
+		return $this->addInformationalValues($jwk, $kid, $use);
+	}
+
+	public function toPublicJWK(string|null $kid = null, string|null $use = null):array{
+
+		$jwk = [
+			'kty' => 'OKP',
+			'crv' => 'Ed25519',
+			'x'   => Util::base64encode($this->getPublicKey()),
+		];
+
+		return $this->addInformationalValues($jwk, $kid, $use);
 	}
 
 }

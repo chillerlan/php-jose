@@ -63,14 +63,14 @@ final class JWS implements JWT{
 		[$header, $payload, $signature]          = array_map(Util::base64decode(...), [$b64header, $b64payload, $b64signature]);
 
 		if(!$this->algo->verify($b64header.'.'.$b64payload, $signature)){
-			throw new RuntimeException('signature verification failed');
+			throw new RuntimeException('signature verification failed'); // @codeCoverageIgnore
 		}
 
 		$decodedHeader = Util::jsonDecode($header);
 
 		// honestly we do not care if the "alg" parameter is present, but we'll check it in case it is
 		if(array_key_exists('alg', $decodedHeader) && $decodedHeader['alg'] !== $this->algo->getName()){
-			throw new RuntimeException(sprintf('invalid "alg" parameter: "%s"', $decodedHeader['alg']));
+			throw new RuntimeException(sprintf('invalid "alg" parameter: "%s"', $decodedHeader['alg'])); // @codeCoverageIgnore
 		}
 
 		return [$header, $payload];

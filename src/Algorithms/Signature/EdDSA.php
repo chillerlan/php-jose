@@ -22,7 +22,11 @@ use function sodium_crypto_sign_verify_detached;
  */
 final class EdDSA extends JWAAbstract implements SignatureAlgorithm{
 
-	public const SUPPORTED_ALGOS = ['EdDSA' => 'Ed25519'];
+	public const ALGO_EDDSA = 'EdDSA';
+
+	public const SUPPORTED_ALGOS = [
+		self::ALGO_EDDSA => 'Ed25519',
+	];
 
 	public function sign(string $message):string{
 		return sodium_crypto_sign_detached($message, $this->jwk->getPrivateKey());
