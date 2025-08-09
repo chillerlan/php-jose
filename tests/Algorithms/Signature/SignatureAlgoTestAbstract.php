@@ -32,7 +32,7 @@ abstract class SignatureAlgoTestAbstract extends AlgoTestAbstract{
 		$jwt                = $jws->encode($expectedPayload);
 		[$header, $payload] = $jws->decode($jwt);
 
-		$this::assertSame($expectedHeader,  Util::jsonDecode($header));
+		$this::assertSame($expectedHeader,  $header);
 		$this::assertSame($expectedPayload, Util::jsonDecode($payload));
 	}
 
@@ -75,7 +75,7 @@ abstract class SignatureAlgoTestAbstract extends AlgoTestAbstract{
 		// this covers the EC random hashes too
 		$this::assertTrue($verifyAlgo->verify($header.'.'.$payload, Util::base64decode($signature)));
 
-		$this::assertSame([Util::base64decode($expectedHeader), $payloadString], $jws->decode($jwt));
+		$this::assertSame([Util::jsonDecode(Util::base64decode($expectedHeader)), $payloadString], $jws->decode($jwt));
 	}
 
 }

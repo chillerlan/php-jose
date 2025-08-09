@@ -73,7 +73,7 @@ final class JWS implements JWT{
 			throw new RuntimeException(sprintf('invalid "alg" parameter: "%s"', $decodedHeader['alg'])); // @codeCoverageIgnore
 		}
 
-		return [$header, $payload];
+		return [$decodedHeader, $payload];
 	}
 
 }
